@@ -2,7 +2,7 @@
   "name": "@majikah/majik-slink",
   "type": "module",
   "description": "Majik SLink is a specialized TypeScript library designed for URL ownership verification and cryptographic identity linking. It provides a robust mechanism to prove that a specific digital identity (a MajikKey) controls a publicly accessible web resource (such as a YouTube channel, social media profile, or personal blog).",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "license": "Apache-2.0",
   "author": "Zelijah",
   "main": "./dist/index.js",

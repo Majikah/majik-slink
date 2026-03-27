@@ -43,6 +43,7 @@ export interface MajikSLinkJSON {
   version: 1;
   id: string;
   user_id: string;
+  muid: string;
   /** Full registered domain e.g. "youtube.com" */
   domain: string;
   /** Subdomain or null */

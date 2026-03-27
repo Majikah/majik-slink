@@ -69,6 +69,7 @@ export class MajikSLink {
   private readonly _version: 1;
   private readonly _id: string;
   private readonly _user_id: string;
+  private readonly _muid: string;
 
   // URL parts (normalised)
   private readonly _domain: string; // "youtube.com"
@@ -97,6 +98,7 @@ export class MajikSLink {
     version: 1;
     id: string;
     user_id: string;
+    muid: string;
     domain: string;
     sld: string;
     tld: string;
@@ -115,6 +117,7 @@ export class MajikSLink {
     this._version = data.version;
     this._id = data.id;
     this._user_id = data.user_id;
+    this._muid = data.muid;
     this._domain = data.domain;
     this._sld = data.sld;
     this._tld = data.tld;
@@ -141,6 +144,10 @@ export class MajikSLink {
   }
   get userId(): string {
     return this._user_id;
+  }
+
+  get muid(): string {
+    return this._muid;
   }
 
   /** Full registered domain e.g. "youtube.com" */
@@ -258,6 +265,7 @@ export class MajikSLink {
     rawUrl: string,
     key: MajikKey,
     userId: string,
+    muid: string,
     options?: {
       id?: string;
       timestamp?: Date;
@@ -267,6 +275,7 @@ export class MajikSLink {
     // ── Validate inputs ──────────────────────────────────────────────────
     assertNonEmptyString(rawUrl, "url");
     assertNonEmptyString(userId, "userId");
+    assertNonEmptyString(muid, "Majik Universal ID");
     assertMajikKey(key);
     assertUnlockedKey(key);
     assertValidHttpUrl(rawUrl);
@@ -304,6 +313,7 @@ export class MajikSLink {
       version: SLINK_VERSION,
       id: options?.id ?? generateId(),
       user_id: userId,
+      muid: muid,
       domain: urlInfo.domain,
       sld: urlInfo.sld,
       tld: urlInfo.tld,
@@ -431,7 +441,7 @@ export class MajikSLink {
       this._path,
     );
 
-    this.signature.validate()
+    this.signature.validate();
 
     // Verify the signature against the canonical URL
     return MajikSignature.verify(canonical, this._signature, signerKeys);
@@ -523,6 +533,7 @@ export class MajikSLink {
       version: this._version,
       id: this._id,
       user_id: this._user_id,
+      muid: this._muid,
       domain: this._domain,
       subdomain: this._subdomain,
       path: this._path,
@@ -583,6 +594,7 @@ export class MajikSLink {
         version: SLINK_VERSION,
         id: json.id,
         user_id: json.user_id,
+        muid: json.muid,
         domain: json.domain,
         sld,
         tld,
