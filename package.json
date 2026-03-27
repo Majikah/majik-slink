@@ -1,0 +1,57 @@
+{
+  "name": "@majikah/majik-slink",
+  "type": "module",
+  "description": "Majik SLink is a specialized TypeScript library designed for URL ownership verification and cryptographic identity linking. It provides a robust mechanism to prove that a specific digital identity (a MajikKey) controls a publicly accessible web resource (such as a YouTube channel, social media profile, or personal blog).",
+  "version": "0.0.1",
+  "license": "Apache-2.0",
+  "author": "Zelijah",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Majikah/majik-slink.git"
+  },
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/jedlsf"
+  },
+  "keywords": [
+    "url-verification",
+    "identity-linking",
+    "ownership-proof",
+    "cryptographic-signature",
+    "post-quantum",
+    "ml-dsa",
+    "ed25519",
+    "canonical-urls",
+    "web-identity",
+    "trustless-verification",
+    "majikah",
+    "content-authenticity",
+    "digital-provenance",
+    "hybrid-cryptography",
+    "verification-code"
+  ],
+  "homepage": "https://github.com/Majikah/majik-slink#readme",
+  "bugs": {
+    "url": "https://github.com/Majikah/majik-slink/issues"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@majikah/majik-key": "^0.2.3",
+    "@majikah/majik-signature": "^0.0.15",
+    "@types/psl": "^1.1.3",
+    "psl": "^1.15.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0"
+  }
+}
