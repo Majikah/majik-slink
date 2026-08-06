@@ -17,4 +17,9 @@ export * from "./core/constants";
 
 // ── Low-level utilities (opt-in) ──────────────────────────────────────────────
 
-export { parseUrlInfo, buildCanonical, detectSource } from "./core/utils";
+export {
+  parseUrlInfo,
+  buildCanonical,
+  detectSource,
+  defaultVerificationMethod,
+} from "./core/utils";

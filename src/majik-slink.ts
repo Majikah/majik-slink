@@ -4,15 +4,18 @@
 
 import type { MajikKey } from "@majikah/majik-key";
 import {
-  base64ToBytes,
   MajikSignature,
+  MajikSignatureCompactJSON,
   MajikSignerPublicKeys,
-  type MajikSignatureJSON,
+  VerificationResult,
 } from "@majikah/majik-signature";
 import {
+  MajikSLinkConstructorOptions,
   MajikSLinkJSON,
+  SLinkClaimType,
   SLinkCodePreview,
   SLinkSource,
+  SLinkVerificationMethod,
   SLinkVerificationStatus,
   UrlInfo,
 } from "./core/types";
@@ -29,6 +32,7 @@ import {
   assertUnlockedKey,
   assertValidHttpUrl,
   buildCanonical,
+  defaultVerificationMethod,
   detectSource,
   generateId,
   parseUrlInfo,
@@ -40,8 +44,8 @@ import {
 /**
  * MajikSLink
  * ---------------------
- * MajikSLink — URL ownership signing and verification.
- * A MajikSLink proves that the holder of a MajikKey owns (or controls) a
+ * MajikSLink — URL binding, ownership, and attribution signing/verification.
+ * A MajikSLink cryptographically associates a MUID/MajikKey with a
  * publicly-accessible URL by:
  *
  *   1. Normalising the URL to a canonical form (scheme + subdomain + domain +
@@ -49,13 +53,28 @@ import {
  *   2. Deriving a short, deterministic verification code from a SHA-256 digest
  *      of the canonical URL parts — so the same resource always produces the
  *      same code regardless of query params or tracking tokens.
- *   3. Signing the canonical URL string with the owner's MajikKey via
- *      MajikSignature (Ed25519 + ML-DSA-87 hybrid).
+ *   3. Signing the canonical URL string with the signer's MajikKey via
+ *      MajikSignature (Ed25519 + ML-DSA-87 hybrid), stored in compact form
+ *      (no embedded public keys — resolved externally at verify time via
+ *      muid / signerId).
  *
- * The owner embeds the verification code (`v_code`) anywhere in the public
- * page (description, bio, comment, HTML body) and a scraper verifies its
- * presence. Once found, the MajikSignature certifies the association between
- * the signer's identity and the URL.
+ * The *strength* of the claim is described by `claimType`:
+ *   - "ownership":   the signer controls the domain. Verifiable via DNS TXT
+ *                     (strongest — survives page changes) or page content.
+ *   - "attribution": the signer controls the content at this URL (a channel
+ *                     bio, repo README) but not the domain/DNS. Verifiable
+ *                     only via page content.
+ *   - "reference":   the signer controls neither. A signed attestation with
+ *                     no independent proof possible — never present this to
+ *                     end users as "verified"; surface it as "attested by
+ *                     <signer>" instead.
+ * See `SLinkClaimType` / `SLinkVerificationMethod` for the full contract.
+ *
+ * For "dns_txt" verification, the owner publishes `dnsRecordValue` at
+ * `dnsRecordName`. For "page_content", the owner embeds `vCode` anywhere in
+ * the public page (description, bio, comment, HTML body) and a scraper
+ * verifies its presence. Once found, the MajikSignature certifies the
+ * association between the signer's identity and the URL.
  *
  * Canonical URL format (what is signed):
  *   "majik-slink-v1:<subdomain>::<sld>::<tld>::<path>"
@@ -88,32 +107,16 @@ export class MajikSLink {
   private _status: SLinkVerificationStatus;
   private _verified_at: Date | null;
 
-  private readonly _signature: MajikSignatureJSON;
-  private _signatureInstance: MajikSignature | null = null; // Cached instance
+  private readonly _claim_type: SLinkClaimType;
+  private readonly _verification_method: SLinkVerificationMethod;
+  private readonly _signature: MajikSignatureCompactJSON;
+  private _resolvedSignature: MajikSignature | null = null;
+
   private readonly _timestamp: Date;
 
   // ── Private constructor — use MajikSLink.create() ────────────────────────
 
-  private constructor(data: {
-    version: 1;
-    id: string;
-    user_id: string;
-    muid: string;
-    domain: string;
-    sld: string;
-    tld: string;
-    subdomain: string | null;
-    path: string;
-    url: string;
-    clean_url: string;
-    hash: string;
-    v_code: string;
-    source: SLinkSource;
-    status: SLinkVerificationStatus;
-    verified_at: Date | null;
-    signature: MajikSignatureJSON;
-    timestamp: Date;
-  }) {
+  private constructor(data: MajikSLinkConstructorOptions) {
     this._version = data.version;
     this._id = data.id;
     this._user_id = data.user_id;
@@ -128,12 +131,17 @@ export class MajikSLink {
     this._hash = data.hash;
     this._v_code = data.v_code;
     this._source = data.source;
+    // `??` — not `||` — so an explicit `null` (a deliberate "no verification
+    // possible" for claim_type "reference") is preserved rather than being
+    // silently overwritten by the default.
+    this._claim_type = data.claim_type ?? "ownership";
+    this._verification_method =
+      data.verification_method ?? defaultVerificationMethod(this._claim_type);
     this._status = data.status;
     this._verified_at = data.verified_at;
     this._signature = data.signature;
     this._timestamp = data.timestamp;
   }
-
   // ── Getters ──────────────────────────────────────────────────────────────
 
   get version(): 1 {
@@ -200,22 +208,60 @@ export class MajikSLink {
   }
 
   /**
-   * Get the signature as a MajikSignature instance.
-   * The instance is cached to avoid re-parsing on every access.
+   * The resolved MajikSignature instance, if `resolveSignature()` has been
+   * called. Null until then — MajikSLink stores only the compact envelope
+   * (no embedded public keys), so there is nothing to eagerly resolve.
    */
-  get signature(): MajikSignature {
-    if (!this._signatureInstance) {
-      this._signatureInstance = MajikSignature.fromJSON(this._signature);
-    }
-    return this._signatureInstance;
+  get signature(): MajikSignature | null {
+    return this._resolvedSignature;
   }
 
   /**
-   * Get the raw signature JSON.
-   * Useful when you need the serializable form without parsing.
+   * Get the raw compact signature JSON as stored/persisted.
+   * No public keys are embedded — resolve them externally (e.g. by
+   * `signerId` / `muid` from your key registry) before verifying.
    */
-  get signatureJSON(): MajikSignatureJSON {
+  get signatureJSON(): MajikSignatureCompactJSON {
     return this._signature;
+  }
+
+  /**
+   * Resolve the compact signature into a full MajikSignature instance, using
+   * externally-supplied public keys (looked up by `this.muid` or
+   * `this.signatureJSON.signerId` from your key registry).
+   *
+   * There is nothing to fall back to by design — MajikSLink never stores
+   * public keys inline, so `publicKeys` is mandatory. The result is cached;
+   * subsequent calls with the same (correct) keys are free.
+   *
+   * @throws {MajikSLinkValidationError} if `publicKeys.signerId` does not
+   *         match the signerId recorded on this SLink's signature.
+   *
+   * @example
+   *   const keys = await resolvePublicKeysForMuid(slink.muid);
+   *   const sig = slink.resolveSignature(keys);
+   *   console.log(sig.hasTSA);
+   */
+  resolveSignature(publicKeys: MajikSignerPublicKeys): MajikSignature {
+    if (!this._resolvedSignature) {
+      if (publicKeys.signerId !== this._signature.signerId) {
+        throw new MajikSLinkValidationError(
+          `publicKeys are for signer "${publicKeys.signerId}" but this SLink was signed by "${this._signature.signerId}".`,
+        );
+      }
+      this._resolvedSignature = MajikSignature.fromCompact(
+        this._signature,
+        publicKeys,
+      );
+    }
+    return this._resolvedSignature;
+  }
+
+  get claimType(): SLinkClaimType {
+    return this._claim_type;
+  }
+  get verificationMethod(): SLinkVerificationMethod {
+    return this._verification_method;
   }
 
   get timestamp(): Date {
@@ -235,6 +281,29 @@ export class MajikSLink {
       chunks.push(hex.slice(i, i + 4));
     }
     return chunks;
+  }
+
+  /**
+   * The DNS TXT record name to publish for `"dns_txt"` verification.
+   * Only meaningful when `verificationMethod === "dns_txt"` — for
+   * `"page_content"` or `"reference"` SLinks this value is simply
+   * irrelevant (not an error), so check `verificationMethod` before using it.
+   *
+   * @example "_majik-challenge.example.com"
+   */
+  get dnsRecordName(): string {
+    return `_majik-challenge.${this._domain}`;
+  }
+
+  /**
+   * The DNS TXT record value to publish for `"dns_txt"` verification.
+   * See `dnsRecordName` — only meaningful when
+   * `verificationMethod === "dns_txt"`.
+   *
+   * @example "majik-slink-verify=majik-slink:a1b2c3d4..."
+   */
+  get dnsRecordValue(): string {
+    return `majik-slink-verify=${this._v_code}`;
   }
 
   // ── Static: create ────────────────────────────────────────────────────────
@@ -270,6 +339,8 @@ export class MajikSLink {
       id?: string;
       timestamp?: Date;
       status?: SLinkVerificationStatus;
+      claimType?: SLinkClaimType; // defaults to "ownership"
+      verificationMethod?: SLinkVerificationMethod; // defaults to null
     },
   ): Promise<MajikSLink> {
     // ── Validate inputs ──────────────────────────────────────────────────
@@ -287,21 +358,17 @@ export class MajikSLink {
       );
     }
 
-    // ── Hash the canonical string ────────────────────────────────────────
+    const ts = options?.timestamp ?? new Date();
+
     const hash = await sha256Hex(urlInfo.canonical);
     const v_code = `${CODE_PREFIX}${hash.slice(0, CODE_HEX_LENGTH)}`;
 
-    // ── Sign with MajikSignature ─────────────────────────────────────────
     let signature: MajikSignature;
     try {
-      signature = await MajikSignature.sign(
-        urlInfo.canonical, // what we're signing
-        key,
-        {
-          contentType: "majik-slink/url",
-          timestamp: (options?.timestamp ?? new Date()).toISOString(),
-        },
-      );
+      signature = await MajikSignature.sign(urlInfo.canonical, key, {
+        contentType: "majik-slink/url",
+        timestamp: ts.toISOString(),
+      });
     } catch (err) {
       throw new MajikSLinkSigningError(
         "Failed to sign the SLink canonical URL.",
@@ -313,7 +380,7 @@ export class MajikSLink {
       version: SLINK_VERSION,
       id: options?.id ?? generateId(),
       user_id: userId,
-      muid: muid,
+      muid,
       domain: urlInfo.domain,
       sld: urlInfo.sld,
       tld: urlInfo.tld,
@@ -324,10 +391,12 @@ export class MajikSLink {
       hash,
       v_code,
       source: detectSource(urlInfo.sld),
+      claim_type: options?.claimType ?? "ownership",
+      verification_method: options?.verificationMethod ?? null,
       status: options?.status ?? "unverified",
       verified_at: null,
-      signature: signature.toJSON(),
-      timestamp: options?.timestamp ?? new Date(),
+      signature: signature.toCompact(),
+      timestamp: ts,
     });
   }
 
@@ -365,86 +434,74 @@ export class MajikSLink {
   }
 
   // ── Static: verifySignature ───────────────────────────────────────────────
-
   /**
-   * Verify the embedded MajikSignature of a persisted MajikSLink.
+   * Verify the stored MajikSignature of a persisted MajikSLink against
+   * externally-supplied public keys.
    *
-   * This does NOT scrape the target page — it only cryptographically checks
-   * that the signature covers the canonical URL and was issued by the stated
-   * signer.
+   * This does NOT scrape the target page or check DNS — it only
+   * cryptographically checks that the signature covers the canonical URL
+   * and was issued by the holder of `publicKeys`. No public keys are
+   * embedded in the stored SLink; you must resolve them yourself (e.g. by
+   * `signerId` / `muid` from your key registry) before calling this.
    *
-   * Use in conjunction with your scraper to fully verify ownership:
-   *   1. Scrape the page and confirm `v_code` is present.
+   * Use in conjunction with your DNS/scrape check to fully verify a claim:
+   *   1. Look up (dns_txt) or scrape (page_content) per `verificationMethod`
+   *      and confirm `v_code` is present.
    *   2. Call `verifySignature()` to confirm the cryptographic provenance.
    *
    * @example
-   *   const result = MajikSLink.verifySignature(slink, signerPublicKeys);
-   *   if (!result.valid) console.warn("Signature tampered:", result.reason);
+   *   const keys = await resolvePublicKeysForMuid(slink.muid);
+   *   const result = MajikSLink.verifySignature(slink, keys);
+   *   if (!result.valid) console.warn("Signature invalid:", result.reason);
    */
   static verifySignature(
     slink: MajikSLink | MajikSLinkJSON,
-    publicKeys: Parameters<typeof MajikSignature.verify>[2],
-  ): ReturnType<typeof MajikSignature.verify> {
+    publicKeys: MajikSignerPublicKeys,
+  ): VerificationResult {
     const json = slink instanceof MajikSLink ? slink.toJSON() : slink;
-
-    // Reconstruct the canonical string from stored parts
-    // We need to extract sld and tld from the domain field
     const parts = json.domain.split(".");
     const tld = parts[parts.length - 1] ?? "";
     const sld = parts.slice(0, -1).join(".") || json.domain;
-
     const canonical = buildCanonical(json.subdomain, sld, tld, json.path);
-
-    return MajikSignature.verify(canonical, json.signature, publicKeys);
+    return MajikSignature.verifyCompact(canonical, json.signature, publicKeys);
   }
 
   // ── Instance: verify ──────────────────────────────────────────────────────
 
   /**
-   * Verify this SLink's embedded signature against the provided public keys.
+   * Verify this SLink's stored signature against externally-supplied
+   * public keys.
    *
    * This validates that:
    *   1. The signature cryptographically matches the canonical URL
    *   2. The signature was created by the holder of the private key
+   *      corresponding to `publicKeys`
    *
-   * Note: This does NOT scrape the page. Use with `markVerified()` after
-   * a successful scrape to complete the verification flow.
+   * Note: This does NOT scrape the page or check DNS. Use with
+   * `markVerified()` after a successful DNS lookup / scrape (per
+   * `verificationMethod`) to complete the verification flow.
    *
-   * @param publicKeys The signer's public keys (classic Ed25519 + ML-DSA-87)
+   * @param publicKeys The signer's public keys (classic Ed25519 + ML-DSA-87),
+   *                    resolved externally — e.g. by `this.muid`.
    * @returns Verification result with valid/invalid status and optional reason
    *
    * @example
-   *   // After scraping and finding v_code on the page:
-   *   const result = slink.verify(user.publicKeys);
+   *   // After confirming v_code via DNS or page scrape:
+   *   const keys = await resolvePublicKeysForMuid(slink.muid);
+   *   const result = slink.verify(keys);
    *   if (result.valid) {
    *     slink.markVerified();
    *     await db.save(slink);
    *   }
    */
-  verify(
-    publicKeys?: Parameters<typeof MajikSignature.verify>[2],
-  ): ReturnType<typeof MajikSignature.verify> {
-    const signerKeys: MajikSignerPublicKeys = {
-      edPublicKey:
-        publicKeys?.edPublicKey ||
-        base64ToBytes(this.signature.signerEdPublicKey),
-      mlDsaPublicKey:
-        publicKeys?.mlDsaPublicKey ||
-        base64ToBytes(this.signature.signerMlDsaPublicKey),
-      signerId: publicKeys?.signerId || this.signature.signerId,
-    };
-    // Rebuild canonical string from stored parts
+  verify(publicKeys: MajikSignerPublicKeys): VerificationResult {
     const canonical = buildCanonical(
       this._subdomain,
       this._sld,
       this._tld,
       this._path,
     );
-
-    this.signature.validate();
-
-    // Verify the signature against the canonical URL
-    return MajikSignature.verify(canonical, this._signature, signerKeys);
+    return MajikSignature.verifyCompact(canonical, this._signature, publicKeys);
   }
 
   // ── Status mutation ───────────────────────────────────────────────────────
@@ -541,6 +598,8 @@ export class MajikSLink {
       hash: this._hash,
       v_code: this._v_code,
       source: this._source,
+      claim_type: this._claim_type,
+      verification_method: this._verification_method,
       status: this._status,
       timestamp: this._timestamp.toISOString(),
       verified_at: this._verified_at?.toISOString() ?? null,
@@ -550,7 +609,8 @@ export class MajikSLink {
 
   /**
    * Rehydrate a MajikSLink from a plain JSON object (e.g. from a database row).
-   * Does NOT re-verify the signature — call `verify()` explicitly.
+   * Does NOT re-verify the signature — call `verify()` explicitly with
+   * externally-resolved public keys.
    *
    * @throws {MajikSLinkSerializationError} if any required field is missing or malformed.
    */
@@ -567,12 +627,35 @@ export class MajikSLink {
       assertNonEmptyString(json?.hash, "hash");
       assertNonEmptyString(json?.v_code, "v_code");
       assertNonEmptyString(json?.source, "source");
+      assertNonEmptyString(json?.claim_type, "claim_type");
       assertNonEmptyString(json?.status, "status");
       assertNonEmptyString(json?.timestamp, "timestamp");
 
+      if (
+        json?.claim_type !== "ownership" &&
+        json?.claim_type !== "attribution" &&
+        json?.claim_type !== "reference"
+      ) {
+        throw new MajikSLinkSerializationError(
+          `"claim_type" must be "ownership", "attribution", or "reference". Got: ${String(json?.claim_type)}`,
+        );
+      }
+
+      // verification_method is nullable by design — check it's a valid
+      // value rather than asserting non-empty.
+      if (
+        json?.verification_method !== null &&
+        json?.verification_method !== "dns_txt" &&
+        json?.verification_method !== "page_content"
+      ) {
+        throw new MajikSLinkSerializationError(
+          `"verification_method" must be "dns_txt", "page_content", or null. Got: ${String(json?.verification_method)}`,
+        );
+      }
+
       if (!json?.signature || typeof json.signature !== "object") {
         throw new MajikSLinkSerializationError(
-          '"signature" must be a MajikSignatureJSON object.',
+          '"signature" must be a MajikSignatureCompactJSON object.',
         );
       }
 
@@ -605,6 +688,8 @@ export class MajikSLink {
         hash: json.hash,
         v_code: json.v_code,
         source: json.source as SLinkSource,
+        claim_type: json.claim_type,
+        verification_method: json.verification_method,
         status: json.status as SLinkVerificationStatus,
         verified_at: json.verified_at ? new Date(json.verified_at) : null,
         signature: json.signature,
@@ -673,6 +758,7 @@ export class MajikSLink {
       `  user:     ${this._user_id}`,
       `  url:      ${this._clean_url}`,
       `  v_code:   ${this._v_code}`,
+      `  claim:    ${this._claim_type} (${this._verification_method ?? "no verification possible"})`,
       `  status:   ${this._status}`,
       `  source:   ${this._source}`,
       `  signed:   ${this._timestamp.toISOString()}`,
@@ -680,3 +766,9 @@ export class MajikSLink {
     ].join("\n");
   }
 }
+
+// Freeze static methods
+Object.freeze(MajikSLink);
+
+// Freeze instance methods
+Object.freeze(MajikSLink.prototype);

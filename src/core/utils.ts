@@ -2,7 +2,12 @@
 
 import { MajikKey } from "@majikah/majik-key";
 import { MajikSLinkSigningError, MajikSLinkValidationError } from "./errors";
-import { SLinkSource, UrlInfo } from "./types";
+import {
+  SLinkClaimType,
+  SLinkSource,
+  SLinkVerificationMethod,
+  UrlInfo,
+} from "./types";
 import { CANONICAL_PREFIX } from "./constants";
 import psl from "psl";
 
@@ -153,4 +158,24 @@ export function buildCanonical(
   path: string,
 ): string {
   return `${CANONICAL_PREFIX}${subdomain ?? "root"}::${sld}::${tld}::${path}`;
+}
+
+/**
+ * Derive the natural default verification method for a claim type when the
+ * caller doesn't specify one explicitly.
+ *   - "ownership"   → "dns_txt" (strongest available proof for a domain the signer controls)
+ *   - "attribution" → "page_content" (only proof possible without domain control)
+ *   - "reference"   → null (no independent proof is possible at all)
+ */
+export function defaultVerificationMethod(
+  claimType: SLinkClaimType,
+): SLinkVerificationMethod {
+  switch (claimType) {
+    case "ownership":
+      return "dns_txt";
+    case "attribution":
+      return "page_content";
+    case "reference":
+      return null;
+  }
 }
