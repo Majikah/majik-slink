@@ -125,17 +125,16 @@ const hydratedSLink = MajikSLink.fromJSON(jsonPayload);
 
 ## Author
 
-Made with 💙 by **Zelijah**
+Developed by **Josef Elijah Fabian (Zelijah)** | [Majikah Solutions OPC](https://majikah.solutions/about)
 
-**Developer**: Josef Elijah Delos Santos Fabian  
-**Organization**: Majikah Solutions OPC  
-**GitHub**: [https://github.com/jedlsf](https://github.com/jedlsf)  
+**Developer**: [Josef Elijah Fabian](https://github.com/jedlsf)
+**GitHub**: [https://github.com/Majikah](https://github.com/Majikah)
 **Project Repository**: [https://github.com/Majikah/majik-slink](https://github.com/Majikah/majik-slink)
 
 ---
 
 ## Contact
 
-*   **Business Email**: [business@thezelijah.world](mailto:business@thezelijah.world)
-*   **Official Website**: [https://www.thezelijah.world](https://www.thezelijah.world)
-*   **ID Web App**: [https://id.majikah.solutions](https://id.majikah.solutions)
+- **Business Email**: [business@majikah.solutions](mailto:business@majikah.solutions)
+- **Official Website**: [https://www.thezelijah.world](https://www.thezelijah.world)
+- **Majikah Ecosystem**: [https://majikah.solutions](https://majikah.solutions)
