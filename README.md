@@ -3,21 +3,24 @@
 [![Developed by Zelijah](https://img.shields.io/badge/Developed%20by-Zelijah-red?logo=github&logoColor=white)](https://www.thezelijah.world) ![GitHub Sponsors](https://img.shields.io/github/sponsors/jedlsf?style=plastic&label=Sponsors&link=https%3A%2F%2Fgithub.com%2Fsponsors%2Fjedlsf)
 ![npm](https://img.shields.io/npm/v/@majikah/majik-slink) ![npm downloads](https://img.shields.io/npm/dm/@majikah/majik-slink) [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) ![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue)
 
-**MajikSLink** is a specialized TypeScript library designed for URL ownership verification and cryptographic identity linking. It provides a robust, zero-trust mechanism to prove that a specific digital identity (a **MajikKey**) controls a publicly accessible web resource (such as a YouTube channel, social media profile, DNS record, or personal blog).
+**MajikSLink** is a specialized TypeScript library designed for URL binding, ownership, and cryptographic attribution. It provides a robust, zero-trust mechanism to prove that a specific digital identity (via a **MajikKey** and **MUID**) controls or is attested to a publicly accessible web resource (such as a YouTube channel, social media profile, DNS record, or personal blog).
 
-By combining traditional **Ed25519** signatures with post-quantum **ML-DSA-87 (Dilithium)** hybrid cryptography via `@majikah/majik-signature`, MajikSLink ensures that your identity-to-URL associations are tamper-proof and resilient against future quantum threats.
+By combining traditional **Ed25519** signatures with post-quantum **ML-DSA-87 (Dilithium)** hybrid cryptography via `@majikah/majik-signature`, MajikSLink ensures that your identity-to-URL associations are tamper-proof, resilient against future quantum threats, and structurally decoupled for decentralized verification.
 
-Identities can be created and managed via the web application at **[https://id.majikah.solutions](https://id.majikah.solutions)** using your own Majik Keys.
+Identities can be created and managed via the web application at **[https://id.majikah.solutions](https://id.majikah.solutions)**.
 
 ---
 
 ## Key Features
 
-1. **Deterministic URL Normalization:** Automatically converts URLs into a canonical `cleanUrl` format (stripping tracking queries, fragments, and trailing slashes) so that the same core resource always generates a consistent verification code and hash.
-2. **Challenge-Response Verification:** Generates short, OTP-style verification codes (`vCode`) that users can place in DNS TXT records, bios, or page metadata for automated verifiers to detect.
-3. **Post-Quantum Hybrid Signing:** Leverages `MajikSignature` to sign the canonical URL data, guaranteeing non-repudiation.
-4. **Trustless Proof of Ownership:** Enables a decentralized workflow where a web crawler verifies the presence of a challenge code, and the library independently verifies the cryptographic signature against the owner's public keys.
-5. **Flexible Serialization:** Built-in support for flawless JSON rehydration (`toJSON` / `fromJSON`) and Base64 serialization (`serialize` / `deserialize`) for seamless database storage and API transmission.
+1. **Deterministic URL Normalization:** Automatically converts URLs into a canonical format (`majik-slink-v1:<subdomain>::<sld>::<tld>::<path>`). It strips tracking queries, fragments, and trailing slashes so the exact same core resource always generates a consistent hash and verification code.
+2. **Flexible Claim Types:**
+   * **`ownership`**: The strongest claim, indicating domain control. Verified via DNS TXT records.
+   * **`attribution`**: Indicates content control (e.g., a channel bio or GitHub README) but not DNS control. Verified via page content scraping.
+   * **`reference`**: A pure cryptographic attestation ("this URL is relevant to me") with no independent third-party verification possible.
+3. **Compact Post-Quantum Signatures:** Signatures are stored in a compact envelope. Public keys are *never* embedded directly, requiring verifiers to externally resolve them via the signer's `muid`, ensuring up-to-date registry checks.
+4. **Challenge-Response Verification:** Derives a short OTP-style code (`vCode`) from the SHA-256 hash of the canonical URL to be placed in DNS TXT records or page bios. 
+5. **Serialization Ready:** Built-in support for flawless JSON rehydration (`toJSON` / `fromJSON`) and Base64 serialization (`serialize` / `deserialize`).
 
 ---
 
@@ -27,82 +30,113 @@ Identities can be created and managed via the web application at **[https://id.m
 npm install @majikah/majik-slink @majikah/majik-key @majikah/majik-signature
 ```
 
+---
+
 ## Quick Start & Usage
 
-### 1. Creating and Signing a New SLink
-To link an identity to a URL, create a `MajikSLink` instance using a user's `MajikKey`.
+### 1. Generating a UI Challenge (Without Signing)
+If you are building a UI and want to show the user their verification code *before* they confirm and sign, you can generate a challenge using just the URL.
 
 ```typescript
 import { MajikSLink } from "@majikah/majik-slink";
+
+const preview = await MajikSLink.generateChallenge("https://github.com/majikah/repo?utm_source=test#readme");
+
+if (preview) {
+  console.log("Canonical URL:", preview.cleanUrl); // https://github.com/majikah/repo
+  console.log("Ask user to add this to their bio:", preview.v_code); // majik-slink:xxxx...
+}
+```
+
+### 2. Creating and Signing a New SLink
+To permanently link an identity to a URL, create a `MajikSLink` instance using an unlocked `MajikKey`.
+
+```typescript
 import { MajikKey } from "@majikah/majik-key";
 
-// 1. Initialize your identity (MajikKey)
-const key = await MajikKey.fromSeedPhrase("your seed phrase here...");
+// 1. Initialize and unlock your identity
+const mnemonic = MajikKey.generateMnemonic();
+const key = await MajikKey.create(mnemonic, 'my-passphrase', 'My Signing Key');
 const userId = "user_abc123";
 const muid = "muid_xyz987";
 
 // 2. Create the SLink payload
-const targetUrl = "https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42s";
+const targetUrl = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+
 const slink = await MajikSLink.create(targetUrl, key, userId, muid, {
-  claimType: "ownership" // Defaults to "ownership" and verificationMethod: "dns_txt"
+  claimType: "attribution" // Automatically defaults verificationMethod to "page_content"
 });
 
-console.log("Canonical URL:", slink.cleanUrl); // https://www.youtube.com/watch
-console.log("Verification Code:", slink.vCode); // majik-slink:xxxx-xxxx-xxxx...
+console.log("Status:", slink.status); // "unverified"
+console.log("Source Platform:", slink.source); // "youtube"
 ```
 
-### 2. Presenting the Challenge (For Verifiers)
-If you are building an application that needs to ask a user to verify a URL, you can generate a challenge without a private key.
+### 3. Displaying Verification Requirements
+Depending on the `claimType`, you can guide users on how to prove their link:
 
 ```typescript
-const challenge = await MajikSLink.generateChallenge("https://github.com/majikah/repo");
-
-if (challenge) {
-  console.log("Ask the user to place this code in their bio:", challenge.v_code);
-  console.log("Expected resource hash:", challenge.hash);
+if (slink.verificationMethod === "dns_txt") {
+  console.log("Add a TXT Record:");
+  console.log("Name:", slink.dnsRecordName);   // _majik-challenge.youtube.com
+  console.log("Value:", slink.dnsRecordValue); // majik-slink-verify=majik-slink:a1b2...
+} else if (slink.verificationMethod === "page_content") {
+  console.log("Add this code anywhere in your bio or README:");
+  console.log(slink.vCode); // majik-slink:a1b2...
+  
+  // You can also display it in nice OTP chunks:
+  console.log("Display Code:", slink.codeChunks.join("-"));
 }
 ```
 
-### 3. DNS TXT Verification Formatting
-For domain ownership claims, `MajikSLink` automatically formats the required DNS properties.
-
-```typescript
-console.log("DNS Record Name:", slink.dnsRecordName);   // e.g., _majik-challenge.github.com
-console.log("DNS Record Value:", slink.dnsRecordValue); // e.g., majik-slink-verify=majik-slink:...
-```
-
 ### 4. Verifying Cryptographic Signatures
-When validating an SLink supplied by a user, use their public keys to verify the payload hasn't been tampered with.
+Because MajikSLink uses **compact signatures**, public keys are not stored in the SLink payload. You must fetch the public keys (via `muid`) from your trusted identity registry to verify the claim.
 
 ```typescript
 import { MajikSignature } from "@majikah/majik-signature";
 
-// Retrieve public keys (usually fetched from a trusted identity registry)
-const publicKeys = {
-  ed25519: "base64-ed25519-pubkey",
-  mldsa: "base64-mldsa-pubkey"
-};
+// 1. Fetch public keys from your trusted registry using the SLink's MUID
+const publicKeys = await fetchPublicKeysForMuid(slink.muid); 
 
-// Verify the hydrated SLink instance
+// 2. Verify the cryptographic signature against the canonical URL
 const verificationResult = slink.verify(publicKeys);
 
 if (verificationResult.valid) {
     console.log("Valid signature from:", verificationResult.signerId);
-    slink.markVerified(); // Update state to verified
+    
+    // 3. (Optional) If you also successfully scraped the vCode from the web:
+    slink.markVerified(); 
 } else {
     slink.markSignatureInvalid();
 }
 ```
 
-### 5. Serialization and Deserialization
-Easily store and retrieve `MajikSLink` objects from your database.
+*Note: You can also verify statically without hydrating via `MajikSLink.verifySignature(slinkJSON, publicKeys)`.*
+
+### 5. Utilities & Comparisons
+Easily compare URLs to see if they resolve to the exact same signed resource:
 
 ```typescript
-// Export to JSON for DB storage
+// Ignores query params and fragments automatically
+const isMatch = slink.isSameResource("https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42s");
+console.log(isMatch); // true
+
+// View a human-readable debug summary
+console.log(slink.toSummary());
+```
+
+### 6. Serialization and Database Storage
+Store and retrieve `MajikSLink` objects seamlessly.
+
+```typescript
+// Export to JSON for Database storage
 const jsonPayload = slink.toJSON();
 
-// Hydrate from DB
+// Hydrate from DB (Note: signatures must still be verified with external keys)
 const hydratedSLink = MajikSLink.fromJSON(jsonPayload);
+
+// Export to Base64 (Useful for QR codes or URL parameters)
+const base64String = slink.serialize();
+const fromBase64 = MajikSLink.deserialize(base64String);
 ```
 
 ---
@@ -127,9 +161,9 @@ const hydratedSLink = MajikSLink.fromJSON(jsonPayload);
 
 Developed by **Josef Elijah Fabian (Zelijah)** | [Majikah Solutions OPC](https://majikah.solutions/about)
 
-**Developer**: [Josef Elijah Fabian](https://github.com/jedlsf)
-**GitHub**: [https://github.com/Majikah](https://github.com/Majikah)
-**Project Repository**: [https://github.com/Majikah/majik-slink](https://github.com/Majikah/majik-slink)
+**Developer**: [Josef Elijah Fabian](https://github.com/jedlsf)  
+**GitHub**: [https://github.com/Majikah](https://github.com/Majikah)  
+**Project Repository**: [https://github.com/Majikah/majik-slink](https://github.com/Majikah/majik-slink)  
 
 ---
 
