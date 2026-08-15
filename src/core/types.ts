@@ -1,5 +1,6 @@
 // ─── Supporting types ─────────────────────────────────────────────────────────
 
+import { ISODateString } from "@majikah/majik-key";
 import { MajikSignatureCompactJSON } from "@majikah/majik-signature";
 
 /**
@@ -53,9 +54,9 @@ export interface MajikSLinkJSON {
   /** Verification status */
   status: SLinkVerificationStatus;
   /** ISO timestamp of when this SLink was created */
-  timestamp: string;
+  timestamp: ISODateString;
   /** ISO timestamp of the last verification attempt, or null */
-  verified_at: string | null;
+  verified_at: ISODateString | null;
   /** Compact envelope — no embedded public keys. Resolve via muid/signerId at verify time. */
   signature: MajikSignatureCompactJSON;
 }
