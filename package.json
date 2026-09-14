@@ -51,12 +51,12 @@
   },
   "dependencies": {
     "@majikah/majik-key": "^0.4.0",
-    "@majikah/majik-signature": "^0.3.0",
+    "@majikah/majik-signature": "^0.4.1",
     "@types/psl": "^1.1.3",
     "psl": "^1.15.0"
   },
   "devDependencies": {
-    "@types/node": "^26.2.0",
-    "vitest": "^4.1.10"
+    "@types/node": "^26.5.1",
+    "vitest": "^5.0.0"
   }
 }
