@@ -18,14 +18,18 @@ import {
   SLinkVerificationMethod,
   SLinkVerificationStatus,
   UrlInfo,
-} from "./core/types";
+} from "./core/types.js";
 import {
   MajikSLinkError,
   MajikSLinkSerializationError,
   MajikSLinkSigningError,
   MajikSLinkValidationError,
-} from "./core/errors";
-import { CODE_HEX_LENGTH, CODE_PREFIX, SLINK_VERSION } from "./core/constants";
+} from "./core/errors.js";
+import {
+  CODE_HEX_LENGTH,
+  CODE_PREFIX,
+  SLINK_VERSION,
+} from "./core/constants.js";
 import {
   assertMajikKey,
   assertNonEmptyString,
@@ -37,7 +41,7 @@ import {
   generateId,
   parseUrlInfo,
   sha256Hex,
-} from "./core/utils";
+} from "./core/utils.js";
 
 // ─── MajikSLink ───────────────────────────────────────────────────────────────
 

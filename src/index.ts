@@ -4,16 +4,16 @@
  */
 
 // ── Main class ────────────────────────────────────────────────────────────────
-export { MajikSLink } from "./majik-slink";
+export { MajikSLink } from "./majik-slink.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-export type * from "./core/types";
+export type * from "./core/types.js";
 
 // ── Errors ────────────────────────────────────────────────────────────────────
-export * from "./core/errors";
+export * from "./core/errors.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-export * from "./core/constants";
+export * from "./core/constants.js";
 
 // ── Low-level utilities (opt-in) ──────────────────────────────────────────────
 
@@ -22,4 +22,4 @@ export {
   buildCanonical,
   detectSource,
   defaultVerificationMethod,
-} from "./core/utils";
+} from "./core/utils.js";

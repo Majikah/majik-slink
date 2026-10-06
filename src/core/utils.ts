@@ -1,14 +1,14 @@
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
 import { MajikKey } from "@majikah/majik-key";
-import { MajikSLinkSigningError, MajikSLinkValidationError } from "./errors";
+import { MajikSLinkSigningError, MajikSLinkValidationError } from "./errors.js";
 import {
   SLinkClaimType,
   SLinkSource,
   SLinkVerificationMethod,
   UrlInfo,
-} from "./types";
-import { CANONICAL_PREFIX } from "./constants";
+} from "./types.js";
+import { CANONICAL_PREFIX } from "./constants.js";
 import psl from "psl";
 
 export async function sha256Hex(input: string): Promise<string> {
