@@ -54,16 +54,17 @@
     "package": "npm run build && npm version patch && git push && git push --tags",
     "test": "vitest run",
     "test:watch": "vitest",
-    "update": "npm i @majikah/majik-key@latest @majikah/majik-signature@latest"
+    "update": "npm i @majikah/majik-key@latest @majikah/majik-signature@latest",
+    "update:dev": "npm i -D @types/node@latest vitest@latest"
   },
   "dependencies": {
-    "@majikah/majik-key": "^1.0.2",
-    "@majikah/majik-signature": "^0.10.0",
+    "@majikah/majik-key": "^1.1.0",
+    "@majikah/majik-signature": "^1.0.0",
     "@types/psl": "^1.1.3",
     "psl": "^1.15.0"
   },
   "devDependencies": {
-    "@types/node": "^26.6.4",
-    "vitest": "^5.0.3"
+    "@types/node": "^26.6.5",
+    "vitest": "^5.0.4"
   }
 }
